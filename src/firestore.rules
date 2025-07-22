@@ -1,0 +1,56 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+    // Checks if the requesting user is an admin
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Checks if the user is the owner of the document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // --- Collection Rules ---
+    match /users/{userId} {
+      // CREATE: A user can only create their own user document.
+      // This is crucial for the registration flow to work.
+      allow create: if isOwner(userId);
+      
+      // READ, UPDATE: A user can read/update their own data. Admins can read/update any user data.
+      allow read, update: if isOwner(userId) || isAdmin();
+      
+      // LIST: Only admins can list all users.
+      allow list: if isAdmin();
+
+      // DELETE: Only admins can delete users (but not themselves).
+      allow delete: if isAdmin() && request.auth.uid != userId;
+    }
+
+    match /products/{productId} {
+      // READ: Any authenticated user can read (get) and list (query) products.
+      allow get, list: if request.auth != null;
+
+      // WRITE (Create, Update, Delete): Only admins can modify the product catalog.
+      allow write: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      // CREATE: Users can create their own orders. We check the userId field in the new document.
+      allow create: if isOwner(request.resource.data.userId);
+
+      // READ: Users can read their own orders. Admins can read any order.
+      allow read, list: if isOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.userId) || isAdmin();
+      
+      // UPDATE: Only admins can update orders (e.g., change status).
+      allow update: if isAdmin();
+      
+      // DELETE: Deleting orders is disabled to maintain a historical record.
+      allow delete: if false;
+    }
+  }
+}

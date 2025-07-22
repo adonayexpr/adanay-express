@@ -1,0 +1,45 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can create their own user document.
+    // They can only read and update their own document.
+    // Admins can read all user documents.
+    match /users/{userId} {
+      allow create: if request.auth != null;
+      allow read, update: if request.auth.uid == userId;
+      allow list: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Products can be read by any authenticated user.
+    // Only admins can create, update, or delete products.
+    match /products/{productId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Orders can be created by any authenticated user.
+    // Users can only read their own orders.
+    // Admins can read and update all orders.
+    // Deletion of orders is disallowed.
+    match /orders/{orderId} {
+      allow create: if request.auth != null;
+      allow read: if request.auth.uid == resource.data.userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow update: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if false;
+    }
+
+    // Counters collection is used for sequential order numbers.
+    // It should be readable by any authenticated user during a transaction,
+    // and writeable only within that server-side logic (implicitly by admins or the system).
+    match /counters/{counterId} {
+      // Allow authenticated users to read the counter, which is necessary for the order creation transaction.
+      allow get: if request.auth != null; 
+      // Allow admins to perform all actions, useful for initialization or correction.
+      allow read, write, create, delete: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
